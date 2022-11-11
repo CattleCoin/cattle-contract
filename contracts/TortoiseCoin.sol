@@ -65,6 +65,7 @@ contract TortoiseCoin is ERC20, Ownable {
         address owner;
         uint256 duration;
         GameStatus status;
+        uint256 endTime;
     }
 
     struct SwapRecord {
@@ -86,7 +87,7 @@ contract TortoiseCoin is ERC20, Ownable {
     modifier checkBasicGame(string memory name, string memory cover, uint256 duration) {
         require(bytes(name).length > 1, "Game name charactor less 2");
         require(bytes(cover).length < 120, "Game name charactor great 120");
-        // require(duration >= 30, "Game duration less than 1800 seconds");
+        require(duration >= 1800, "Game duration less than 1800 seconds");
         _;
     } 
 
@@ -152,7 +153,8 @@ contract TortoiseCoin is ERC20, Ownable {
             name: name,
             id: nu,
             cover: cover,
-            duration: duration + block.timestamp,
+            endTime: duration + block.timestamp,
+            duration: duration,
             gameType: GameType.CUSTOM,
             owner: msg.sender,
             status: GameStatus.ACTIVE
@@ -173,7 +175,8 @@ contract TortoiseCoin is ERC20, Ownable {
             name: name,
             id: nu,
             cover: cover,
-            duration: duration + block.timestamp,
+            endTime: duration + block.timestamp,
+            duration: duration,
             gameType: GameType.SYSTEM,
             owner: msg.sender,
             status: GameStatus.ACTIVE
@@ -198,7 +201,7 @@ contract TortoiseCoin is ERC20, Ownable {
     }
 
     function checkOneCustomGame(Game storage game) internal {
-        if(game.duration > block.timestamp || game.status != GameStatus.ACTIVE) {
+        if(game.endTime > block.timestamp || game.status != GameStatus.ACTIVE) {
             return;
         }
 
@@ -259,7 +262,7 @@ contract TortoiseCoin is ERC20, Ownable {
     }
 
     function checkOneSystemGame(Game storage game) internal {
-        if(game.duration > block.timestamp || game.status != GameStatus.ACTIVE) {
+        if(game.endTime > block.timestamp || game.status != GameStatus.ACTIVE) {
             return;
         }
 
@@ -346,7 +349,7 @@ contract TortoiseCoin is ERC20, Ownable {
     function betting(uint256 id, uint256 c) public payable {
         require(games[id].id > 0, "Game not exist");
         require(games[id].status == GameStatus.ACTIVE, "Game invalid");
-        require(games[id].duration > block.timestamp, "The game is over");
+        require(games[id].endTime > block.timestamp, "The game is over");
         require(msg.value >= 1e17, "Bet amount must greate than 0.1 Matic");
         require(!gamePlayers[id][msg.sender], "The same account can only participate once");
 
