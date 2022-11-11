@@ -3,30 +3,18 @@
 pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-
 contract Ownable {
     address public owner;
 
-    /**
-      * dev The Ownable constructor sets the original `owner` of the contract to the sender
-      * account.
-      */
-      constructor() {
-        owner = msg.sender;
-      }
+    constructor() {
+    owner = msg.sender;
+    }
 
-    /**
-      * dev Throws if called by any account other than the owner.
-      */
     modifier onlyOwner() {
         require(msg.sender == owner);
         _;
     }
 
-    /**
-    * dev Allows the current owner to transfer control of the contract to a newOwner.
-    * param newOwner The address to transfer ownership to.
-    */
     function transferOwnership(address newOwner) public onlyOwner {
         if (newOwner != address(0)) {
             owner = newOwner;
@@ -34,6 +22,7 @@ contract Ownable {
     }
 
 }
+
 
 contract TortoiseCoin is ERC20, Ownable {
 
@@ -49,18 +38,19 @@ contract TortoiseCoin is ERC20, Ownable {
         CUSTOM
     }
 
-    struct PrizeResult {
+    struct PrizeRecord {
         uint256 gameId;
-        address ad;
+        address owner;
         bool win;
         uint256 winAmount;
         uint256 amount;
         GameType gameType;
         uint point;
+        uint bankerPoint;
     }
 
     struct BetRecord {
-        address ad;
+        address owner;
         uint choice;
         uint256 money;
         uint256 gameId;
@@ -83,22 +73,34 @@ contract TortoiseCoin is ERC20, Ownable {
         uint256 amount;
     }
 
+    struct PledgeRecord {
+        address owner;
+        uint256 amount;
+    }
+    struct RedeemRecord {
+        address owner;
+        uint256 amount;
+        uint256 fee;
+    }
+
     modifier checkBasicGame(string memory name, string memory cover, uint256 duration) {
         require(bytes(name).length > 1, "Game name charactor less 2");
         require(bytes(cover).length < 120, "Game name charactor great 120");
-        require(duration >= 1800, "Game duration less than 1800 seconds");
+        // require(duration >= 30, "Game duration less than 1800 seconds");
         _;
     } 
 
-    event Prize(PrizeResult);
+    event Prize(PrizeRecord);
     event Betting(BetRecord);
     event CreateGame(Game);
     event Swap(SwapRecord);
+    event Pledge(PledgeRecord);
+    event Redeem(RedeemRecord);
     event Log(string);
     event Log(uint256);
 
     uint256 maxSupply;
-    uint256 MinPledge = 1e19; // min pledge coin value
+    uint256 MinPledge = 1e18; // min pledge coin value
 
     mapping(uint256 => BetRecord[]) bets; //game id => bet record
     mapping(uint256 => mapping(address => bool)) gamePlayers; // game id => ( player => status)
@@ -138,7 +140,7 @@ contract TortoiseCoin is ERC20, Ownable {
         ERC20._mint(account, amount);
     }
 
-    function createCustomGame(string memory name, string memory cover, uint256 duration) public  checkBasicGame(name, cover, duration) returns(bool) {
+    function createCustomGame(string memory name, string memory cover, uint256 duration) public  checkBasicGame(name, cover, duration) {
         require(pledges[msg.sender] > 0, "You need pledge some matic");
 
         uint256 nu = gameNumber;
@@ -160,11 +162,9 @@ contract TortoiseCoin is ERC20, Ownable {
         customGames.push(nu);
 
         emit CreateGame(game);
-
-        return true;
     }
 
-    function createSystemGame(string memory name, string memory cover, uint256 duration) public onlyOwner checkBasicGame(name, cover, duration) returns(bool) {
+    function createSystemGame(string memory name, string memory cover, uint256 duration) public onlyOwner checkBasicGame(name, cover, duration) {
 
         uint256 nu = gameNumber;
         gameNumber++;
@@ -183,8 +183,6 @@ contract TortoiseCoin is ERC20, Ownable {
         systemGames.push(nu);
 
         emit CreateGame(game);
-
-        return true;
     }
 
     function checkAllGames() public {
@@ -203,9 +201,6 @@ contract TortoiseCoin is ERC20, Ownable {
         if(game.duration > block.timestamp || game.status != GameStatus.ACTIVE) {
             return;
         }
-       
-        // require(game.duration <= block.timestamp, "The opening time has not arrived");
-        // require(game.status == GameStatus.ACTIVE, "Game is not running");
 
         game.status = GameStatus.LOCKED;
 
@@ -218,32 +213,31 @@ contract TortoiseCoin is ERC20, Ownable {
 
         uint256 len = bets[game.id].length;
         uint256 serviceFeeAmount = 0;
-        emit CreateGame(game);
         emit Log(len);
         emit Log(game.id);
 
         for(uint256 i = 0; i < len; i++) {
             BetRecord storage r = bets[game.id][i];
-            emit Log("User point");
             r.choice = rand(maxRandom);
             r.prize = true;
             emit Log(r.choice);
 
-            PrizeResult memory prizeRes = PrizeResult({
+            PrizeRecord memory prizeRes = PrizeRecord({
                 gameId: game.id,
                 amount: r.money,
                 win: false,
                 winAmount: r.money,
-                ad: r.ad,
+                owner: r.owner,
                 gameType: GameType.SYSTEM,
-                point: r.choice
+                point: r.choice,
+                bankerPoint: bankerPoint
             });
 
             if(r.choice > bankerPoint) {
                 prizeRes.win = true;
                 pledges[bankderAd] -= r.money;
                 serviceFeeAmount += r.money * serviceRate / 100;
-                (bool res,) = payable(r.ad).call{value: 2 * r.money  - r.money * serviceRate / 100}("");
+                (bool res,) = payable(r.owner).call{value: 2 * r.money  - r.money * serviceRate / 100}("");
                 require(res, "Failed to cash the prize");
             }else {
                 pledges[bankderAd] += r.money;
@@ -323,14 +317,15 @@ contract TortoiseCoin is ERC20, Ownable {
 
             r.prize = true;
 
-            PrizeResult memory prizeRes = PrizeResult({
+            PrizeRecord memory prizeRes = PrizeRecord({
                 gameId: game.id,
                 amount: r.money,
                 win: false,
                 winAmount: r.money,
-                ad: r.ad,
+                owner: r.owner,
                 gameType: GameType.CUSTOM,
-                point: r.choice
+                point: r.choice,
+                bankerPoint: randNum
             });
 
             if(r.choice == randNum) { //hit
@@ -338,7 +333,7 @@ contract TortoiseCoin is ERC20, Ownable {
                 uint256 p2 = r.money + winAmount;
                 prizeRes.winAmount = winAmount;
                 prizeRes.win = true;
-                (bool res,) = payable(r.ad).call{value: p2}("");
+                (bool res,) = payable(r.owner).call{value: p2}("");
                 require(res, "Failed to cash the prize");
             }
 
@@ -363,7 +358,7 @@ contract TortoiseCoin is ERC20, Ownable {
         
         betAmount[id] += msg.value;
         BetRecord memory r = BetRecord({
-            ad: msg.sender,
+            owner: msg.sender,
             choice: c,
             money: msg.value,
             gameId: id,
@@ -410,6 +405,11 @@ contract TortoiseCoin is ERC20, Ownable {
         require(res, "Pledge failed");
 
         _mint(msg.sender, msg.value * getPledgeRewardRate() / 1e18);
+
+        emit Pledge(PledgeRecord({
+            owner: msg.sender,
+            amount: msg.value
+        }));
     }
 
     function redeem() public payable {
@@ -429,6 +429,11 @@ contract TortoiseCoin is ERC20, Ownable {
         (bool res,) = payable(msg.sender).call{value: redeemAmount}("");
         require(res, "Pledge redeem failed");
 
+        emit Redeem(RedeemRecord({
+            owner: msg.sender,
+            amount: redeemAmount,
+            fee: serviceFeeAmount
+        }));
     }
 
     function swap(uint256 amount) public {
