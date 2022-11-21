@@ -404,8 +404,6 @@ contract TortoiseCoin is ERC20, Ownable {
         }else {
             pledges[msg.sender] = msg.value;
         }
-        (bool res,) = payable(this).call{value: msg.value}("");
-        require(res, "Pledge failed");
 
         _mint(msg.sender, msg.value * getPledgeRewardRate() / 1e18);
 
