@@ -78,6 +78,7 @@ contract TortoiseCoin is ERC20, Ownable {
         address owner;
         uint256 amount;
     }
+
     struct RedeemRecord {
         address owner;
         uint256 amount;
@@ -90,6 +91,11 @@ contract TortoiseCoin is ERC20, Ownable {
         require(duration >= 1800, "Game duration less than 1800 seconds");
         _;
     } 
+
+    modifier onlyEoa() {
+        require(tx.origin == msg.sender, "Must be EOA");
+        _;
+    }
 
     event Prize(PrizeRecord);
     event Betting(BetRecord);
@@ -141,8 +147,8 @@ contract TortoiseCoin is ERC20, Ownable {
         ERC20._mint(account, amount);
     }
 
-    function createCustomGame(string memory name, string memory cover, uint256 duration) public  checkBasicGame(name, cover, duration) {
-        require(pledges[msg.sender] > 0, "You need pledge some matic");
+    function createCustomGame(string memory name, string memory cover, uint256 duration) public onlyEoa checkBasicGame(name, cover, duration) {
+        require(pledges[msg.sender] >= MinPledge, "You need pledge some matic");
 
         uint256 nu = gameNumber;
         gameNumber++;
@@ -188,20 +194,28 @@ contract TortoiseCoin is ERC20, Ownable {
         emit CreateGame(game);
     }
 
-    function checkAllGames() public {
+    function checkAllGames() public onlyEoa  {
         uint256 len = systemGames.length;
-        for(uint256 i = 1; i <= len; i++) {
-            checkOneSystemGame(games[i]);
+        for(uint256 i = 0; i < len; i++) {
+            checkOneSystemGame(systemGames[i]);
         }
 
         len = customGames.length;
-        for(uint256 i = 1; i <= len; i++) {
-            checkOneCustomGame(games[i]);
+        for(uint256 i = 0; i < len; i++) {
+            checkOneCustomGame(customGames[i]);
         }
     }
 
-    function checkOneCustomGame(Game storage game) internal {
+    function checkOneCustomGame(uint256 nu) public onlyEoa  {
+        Game storage game = games[nu];
+
+        if(game.id == 0) {
+            emit Log("Game not exist");
+            return;
+        }
+
         if(game.endTime > block.timestamp || game.status != GameStatus.ACTIVE) {
+            emit Log("Game status is error");
             return;
         }
 
@@ -261,8 +275,16 @@ contract TortoiseCoin is ERC20, Ownable {
         require(feeRes, "Service charge deduction failed");
     }
 
-    function checkOneSystemGame(Game storage game) internal {
+    function checkOneSystemGame(uint256 nu) public onlyEoa {
+        Game storage game = games[nu];
+
+        if(game.id == 0) {
+            emit Log("Game not exist");
+            return;
+        }
+
         if(game.endTime > block.timestamp || game.status != GameStatus.ACTIVE) {
+            emit Log("Game status is error");
             return;
         }
 
@@ -273,11 +295,9 @@ contract TortoiseCoin is ERC20, Ownable {
         emit Log(randNum);
         emit Log("random ok!");
         (uint256 w, uint256 l) = calculatePrize(game, randNum);
-        emit Log(w);
         emit Log(l);
         emit Log("win lose value.");
         l = calculateCommission(l);
-        emit Log(l);
         checkAllUserPrize(game, randNum, w, l);
     }
 
@@ -346,7 +366,7 @@ contract TortoiseCoin is ERC20, Ownable {
         game.status = GameStatus.DIE;
     }
 
-    function betting(uint256 id, uint256 c) public payable {
+    function betting(uint256 id, uint256 c) public onlyEoa payable {
         require(games[id].id > 0, "Game not exist");
         require(games[id].status == GameStatus.ACTIVE, "Game invalid");
         require(games[id].endTime > block.timestamp, "The game is over");
@@ -370,8 +390,6 @@ contract TortoiseCoin is ERC20, Ownable {
 
         bets[id].push(r);
         gamePlayers[id][msg.sender] = true;
-        (bool res,) = payable(this).call{value: msg.value}("");
-        require(res, "Bet failed");
 
         _mint(msg.sender, msg.value * getPledgeRewardRate() / 1e18 / 10);
 
@@ -397,7 +415,7 @@ contract TortoiseCoin is ERC20, Ownable {
         return r < 1 ? 1 : r;
     }
 
-    function pledge() public payable {
+    function pledge() public onlyEoa payable {
         require(msg.value >= MinPledge, "Less than the minimum pledge amount");
         if(pledges[msg.sender] > 0) {
             pledges[msg.sender] = pledges[msg.sender] + msg.value;
@@ -413,7 +431,7 @@ contract TortoiseCoin is ERC20, Ownable {
         }));
     }
 
-    function redeem() public payable {
+    function redeem() public onlyEoa payable {
         require(pledges[msg.sender] > 0, "No pledge can be redeemed");
 
         uint256 len = ownerGames[msg.sender].length;
