@@ -124,6 +124,9 @@ contract CattleCoin is ERC20, Ownable {
     uint256[] customGames;
     uint256 nonce = 1;
 
+    uint256 private minSystemGameIndex = 0;
+    uint256 private minCustomGameIndex = 0;
+
     constructor(string memory name_, string memory symbol_, uint256 maxSupply_) ERC20(name_, symbol_) payable {
         maxSupply = maxSupply_;
     }
@@ -149,6 +152,11 @@ contract CattleCoin is ERC20, Ownable {
 
     function createCustomGame(string memory name, string memory cover, uint256 duration) public onlyEoa checkBasicGame(name, cover, duration) {
         require(pledges[msg.sender] >= MinPledge, "You need pledge some matic");
+
+        uint256 len = ownerGames[msg.sender].length;
+        for(uint256 i = 0; i < len; i++) {
+            require(games[ownerGames[msg.sender][i]].status == GameStatus.DIE, "There is a game not finished yet");
+        }
 
         uint256 nu = gameNumber;
         gameNumber++;
@@ -196,26 +204,42 @@ contract CattleCoin is ERC20, Ownable {
 
     function checkAllGames() public onlyEoa  {
         uint256 len = systemGames.length;
-        for(uint256 i = 0; i < len; i++) {
-            checkOneSystemGame(systemGames[i]);
+        for(uint256 i = minSystemGameIndex; i < len; i++) {
+            checkOneSystemGame(i, 0);
         }
 
         len = customGames.length;
-        for(uint256 i = 0; i < len; i++) {
-            checkOneCustomGame(customGames[i]);
+        for(uint256 i = minCustomGameIndex; i < len; i++) {
+            checkOneCustomGame(i, 0);
         }
     }
 
-    function checkOneCustomGame(uint256 nu) public onlyEoa  {
+    function checkOneGame(uint256 gameType, uint256 nu) public onlyEoa {
+        if(gameType == 1) {
+            checkOneSystemGame(0, nu);
+        }else {
+            checkOneCustomGame(0, nu);
+        }
+    }
+
+    function checkOneCustomGame(uint256 index, uint256 gameNu) internal onlyEoa  {
+        uint256 nu = customGames[index];
+        if(gameNu > 0) {
+            nu = gameNu;
+        }
+
         Game storage game = games[nu];
 
-        if(game.id == 0) {
+        if(game.id == 0 || game.endTime > block.timestamp) {
             emit Log("Game not exist");
             return;
         }
 
-        if(game.endTime > block.timestamp || game.status != GameStatus.ACTIVE) {
+        if(game.status != GameStatus.ACTIVE) {
             emit Log("Game status is error");
+            if(index - minCustomGameIndex == 1) {
+                minCustomGameIndex = index;
+            }
             return;
         }
 
@@ -235,8 +259,8 @@ contract CattleCoin is ERC20, Ownable {
 
         for(uint256 i = 0; i < len; i++) {
             BetRecord storage r = bets[game.id][i];
-            r.choice = rand(maxRandom);
             r.prize = true;
+            r.choice = rand(maxRandom);
             emit Log(r.choice);
 
             PrizeRecord memory prizeRes = PrizeRecord({
@@ -266,16 +290,22 @@ contract CattleCoin is ERC20, Ownable {
         ownerCommission(serviceFeeAmount);
 
         game.status = GameStatus.DIE;
+
     }
 
     function ownerCommission(uint256 serviceFeeAmount) internal {
-         uint256 ownerFeeAmount = serviceFeeAmount * distributeRate / 100;
+        uint256 ownerFeeAmount = serviceFeeAmount * distributeRate / 100;
         totalProfitAmount += serviceFeeAmount - ownerFeeAmount;
         (bool feeRes,) = payable(owner).call{value: ownerFeeAmount}("");
         require(feeRes, "Service charge deduction failed");
     }
 
-    function checkOneSystemGame(uint256 nu) public onlyEoa {
+    function checkOneSystemGame(uint256 index, uint256 gameNu) internal onlyEoa {
+        uint256 nu = systemGames[index];
+         if(gameNu > 0) {
+            nu = gameNu;
+        }
+
         Game storage game = games[nu];
 
         if(game.id == 0) {
@@ -285,6 +315,9 @@ contract CattleCoin is ERC20, Ownable {
 
         if(game.endTime > block.timestamp || game.status != GameStatus.ACTIVE) {
             emit Log("Game status is error");
+            if(index - minSystemGameIndex == 1) {
+                minSystemGameIndex = index;
+            }
             return;
         }
 
@@ -399,7 +432,7 @@ contract CattleCoin is ERC20, Ownable {
     function rand(uint max) internal returns(uint256) {
         nonce++;
         uint256 random = uint256(keccak256(abi.encodePacked(block.difficulty, block.timestamp, nonce)));
-        random = uint256(keccak256(abi.encodePacked(block.difficulty, block.timestamp, nonce, random)));
+        random = uint256(keccak256(abi.encodePacked(minCustomGameIndex, minSystemGameIndex, nonce, random)));
         return random%max;
     }
 
