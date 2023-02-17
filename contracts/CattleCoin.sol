@@ -24,7 +24,7 @@ contract Ownable {
 }
 
 
-contract TortoiseCoin is ERC20, Ownable {
+contract CattleCoin is ERC20, Ownable {
 
     enum GameStatus {
         ACTIVE,

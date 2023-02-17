@@ -1,4 +1,4 @@
-## TortoiseCoin
+## CattleCoin
 
 ## Overview
 
